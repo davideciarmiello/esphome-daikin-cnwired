@@ -82,9 +82,29 @@ climate:
     tx_invert: false
 
     auto_mode: true
+    turbo_as_preset: false # if true, show turbo as preset and not as fan speed
 
-    led:
+    room_temperature_sensor: external_temperature
+    room_humidity_sensor: external_humidity
+
+    led_switch:
       name: "Daikin LED"
+    listen_only_switch:
+      name: "Daikin Listen Only"
+    power_switch:
+      name: "Daikin Power"
+    ac_temperature_sensor:
+      name: "Daikin Temperature"
+
+sensor:
+  - platform: template
+    id: external_humidity
+    name: "Template Sensor humidity"
+    lambda: |-
+      return 42.0;
+    update_interval: 60s
+
+
 ```
 
 Replace the GPIOs with the pins used by your hardware.
