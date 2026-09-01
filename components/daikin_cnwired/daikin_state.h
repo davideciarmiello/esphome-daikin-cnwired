@@ -3,8 +3,9 @@
 #include <cmath>
 #include <string>
 #include "esphome/components/climate/climate.h"
-#include "cn_wired.h"
-#include "cn_wired_driver.h"
+//#include "cn_wired.h"
+//#include "cn_wired_driver.h"
+#include "daikin_converters.h"
 #include <cstring>
 #include <optional>
 
@@ -70,13 +71,6 @@ struct DaikinState {
     
     has_tx_package_ = false;
   }
-
-static bool float_equal(float a, float b) {
-  if (std::isnan(a) || std::isnan(b))
-    return std::isnan(a) && std::isnan(b);
-
-  return std::fabs(a - b) < 0.01f;
-}
 
 };
 

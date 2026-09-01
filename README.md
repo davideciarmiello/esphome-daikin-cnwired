@@ -81,7 +81,8 @@ climate:
     rx_invert: false
     tx_invert: false
 
-    auto_mode: true
+    auto_mode: true # disable if you not have auto_mode
+    heat_cool_as_power_on: true # useful for power on restoring old mode, called from turn_on of Home Assistant    
     turbo_as_preset: false # if true, show turbo as preset and not as fan speed
 
     room_temperature_sensor: external_temperature
@@ -95,6 +96,8 @@ climate:
       name: "Daikin Power"
     ac_temperature_sensor:
       name: "Daikin Temperature"
+    online_sensor:
+      name: "Daikin OnLine"
 
 sensor:
   - platform: template
@@ -104,6 +107,14 @@ sensor:
       return 42.0;
     update_interval: 60s
 
+  - platform: template
+    id: external_temperature
+    name: "Template Sensor temperature"
+    lambda: |-
+      return 25.0;
+    update_interval: 60s
+    unit_of_measurement: °C
+    
 
 ```
 

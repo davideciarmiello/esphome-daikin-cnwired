@@ -76,7 +76,7 @@ void DaikinCNWired::loop() {
   //this->set_available(false);
   //return;
 
-  if (this->pending_tx_ && static_cast<int32_t>(millis() - this->pending_tx_ms_) >= 0) {
+  if (this->pending_tx_ && millis() >= this->pending_tx_ms_) {
     if (this->last_rx_mode_time_ > 0)
     {
       this->pending_tx_ = false;
@@ -85,6 +85,21 @@ void DaikinCNWired::loop() {
       ESP_LOGW(TAG, "cannot send, not received last_rx_mode_time_");
     }
   }
+  
+  bool changed = false;
+  float temp = this->get_effective_current_temperature();
+  if (!float_equal(temp, this->current_temperature) && temp > 0)
+  {
+    this->current_temperature = temp;
+    changed = true;
+  }
+  if (this->room_humidity_sensor_ != nullptr && !float_equal(this->room_humidity_sensor_->state, this->current_humidity))
+  {
+      this->current_humidity=this->room_humidity_sensor_->state;
+      changed = true;
+  }
+  if (changed)
+      this->publish_state();
 
   // A missing bus packet for 10 seconds is treated as offline.
   if (this->online_ && this->last_rx_ms_ != 0 && millis() - this->last_rx_ms_ > 10000) {
@@ -93,6 +108,10 @@ void DaikinCNWired::loop() {
     ESP_LOGW(TAG, "CN_WIRED bus timeout - AC not responding");
     this->publish_state();
   }
+
+  if (this->online_sensor_ != nullptr && this->online_sensor_->state != this->online_)
+    this->online_sensor_->publish_state(this->online_);
+
 }
 void DaikinCNWired::user_command_changed_() {
   this->pending_tx_ = false; // viene poi impostato a true quando riceve il prossimo pacchetto, ed avrà un timeout di almeno 20ms
@@ -202,10 +221,6 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
           ESP_LOGD(TAG, "Received Current temperature signal.");
           if (this->ac_temperature_sensor_ != nullptr)
               this->ac_temperature_sensor_->publish_state(temp);
-          this->current_temperature = this->current_state.current_temp_;
-          if (this->room_humidity_sensor_ != nullptr)
-              this->current_humidity=this->room_humidity_sensor_->state;
-          this->publish_state();
       }
       break;
     }
@@ -221,8 +236,8 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
         if (is_remote_control)
         {
           bool is_new = this->last_remote_control_checksum_ != packet[CNW_CRC_TYPE_OFFSET]
-           || this->last_remote_control_ms_ == 0
-           || this->last_remote_control_ms_ + 4000 < millis();
+            || this->last_remote_control_ms_ == 0
+            || this->last_remote_control_ms_ + 4000 < millis();
           if (is_new)
           {
             this->last_remote_control_checksum_ = packet[CNW_CRC_TYPE_OFFSET];
@@ -351,18 +366,39 @@ void DaikinCNWired::set_climate_from_states_(DaikinState &state) {
     }
 }
 
-
+//void DaikinCNWired::set_power(bool power) {  
+//  this->user_command_changed_();
+//  this->pending_mode_ = to_esphome_mode(this->current_state.mode_, power);
+//  ESP_LOGD(TAG, "Nuova modalità from set_power: %s", LOG_STR_ARG(climate_mode_to_string(this->pending_mode_)));
+//}
+//
 void DaikinCNWired::control(const climate::ClimateCall &call) {
   //bool changed = false;
+  ESP_LOGD(TAG, "=== CLIMATE CALL ===");
+
+  ESP_LOGD(TAG, "mode: %d",
+          call.get_mode().has_value() ? *call.get_mode() : -1);
+
+  ESP_LOGD(TAG, "target temp: %s",
+          call.get_target_temperature().has_value() ? "YES" : "NO");
+
+  ESP_LOGD(TAG, "fan mode: %s",
+          call.get_fan_mode().has_value() ? "YES" : "NO");
+
+  ESP_LOGD(TAG, "preset: %s",
+          call.get_preset().has_value() ? "YES" : "NO");
 
   if (call.get_mode().has_value()) {
-    const auto m = *call.get_mode();
+    auto m = *call.get_mode();    
+    if ((m == climate::CLIMATE_MODE_AUTO && !this->auto_mode_) 
+      || (m == climate::CLIMATE_MODE_HEAT_COOL && this->heat_cool_as_power_on_))
+        m = to_esphome_mode(this->current_state.mode_, true);
     if (this->mode != m || this->pending_user_command_)
     {
       this->user_command_changed_();
-      //this->mode = m;
+      ESP_LOGD(TAG, "Nuova modalità: %s", LOG_STR_ARG(climate_mode_to_string(m)));
       this->pending_mode_ = m;
-    }    
+    }
     //const bool power = this->mode != climate::CLIMATE_MODE_OFF;
     //this->action = this->calculate_action_(power);  
     //changed = true;
@@ -531,6 +567,10 @@ climate::ClimateTraits DaikinCNWired::traits() {
   if (this->auto_mode_) {
     traits.add_supported_mode(climate::CLIMATE_MODE_AUTO);
   }
+  if (this->heat_cool_as_power_on_) {
+    traits.add_supported_mode(climate::CLIMATE_MODE_AUTO);
+    traits.add_supported_mode(climate::CLIMATE_MODE_HEAT_COOL);
+  }
 
   traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW,
                                   climate::CLIMATE_FAN_MEDIUM, climate::CLIMATE_FAN_HIGH,
@@ -642,7 +682,6 @@ float DaikinCNWired::get_room_temp_offset() {
 float nearest_step(float temp) {
   return std::round(temp / SETPOINT_STEP) * SETPOINT_STEP;
 }
-
 
 }  // namespace daikin_cnwired
 }  // namespace esphome

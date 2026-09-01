@@ -5,6 +5,8 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/gpio.h"
 #include "cn_wired.h"
@@ -24,6 +26,7 @@ class DaikinCNWired : public climate::Climate, public Component {
   void set_rx_invert(bool value) { this->rx_invert_ = value; }
   void set_tx_invert(bool value) { this->tx_invert_ = value; }
   void set_auto_mode(bool value) { this->auto_mode_ = value; }
+  void set_heat_cool_as_power_on(bool value) { this->heat_cool_as_power_on_ = value; }
   void set_turbo_as_preset(bool value) { this->turbo_as_preset_ = value; }
   //void set_powerful_preset(const std::string &value) { this->powerful_preset_ = value; }
 
@@ -34,12 +37,13 @@ class DaikinCNWired : public climate::Climate, public Component {
 
   void set_switch_led(switch_::Switch *sw) { this->switch_led_ = sw; }
   void set_switch_listen_only(switch_::Switch *sw) { this->switch_listen_only_ = sw; }
-  void set_switch_power(switch_::Switch *sw) { this->switch_power_ = sw; }  
+  void set_switch_power(switch_::Switch *sw) { this->switch_power_ = sw; }
+  void switch_callback(DaikinSwitch *sw, bool value, DaikinSwitchType type);
+  
   void set_room_temperature_sensor(sensor::Sensor *sensor) { this->room_sensor_ = sensor; }
   void set_room_humidity_sensor(sensor::Sensor *sensor) { this->room_humidity_sensor_ = sensor; }
   void set_ac_temperature_sensor(sensor::Sensor *sensor) { this->ac_temperature_sensor_ = sensor; }
-
-  void switch_callback(DaikinSwitch *sw, bool value, DaikinSwitchType type);
+  void set_online_sensor(binary_sensor::BinarySensor *sensor) { this->online_sensor_ = sensor; }
 
   DaikinState current_state;
   DaikinState desired_state;
@@ -61,6 +65,7 @@ class DaikinCNWired : public climate::Climate, public Component {
   bool rx_invert_{false};
   bool tx_invert_{false};
   bool auto_mode_{false};
+  bool heat_cool_as_power_on_{false};
   bool turbo_as_preset_{false};
   CNWiredDriver driver_;
 
@@ -111,6 +116,7 @@ class DaikinCNWired : public climate::Climate, public Component {
   sensor::Sensor *room_sensor_{nullptr};
   sensor::Sensor *room_humidity_sensor_{nullptr};
   sensor::Sensor *ac_temperature_sensor_{nullptr};
+  binary_sensor::BinarySensor *online_sensor_{nullptr};
 
   
   bool use_room_sensor();
