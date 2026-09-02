@@ -597,6 +597,8 @@ climate::ClimateTraits DaikinCNWired::traits() {
   traits.set_visual_min_temperature(16.0f);
   traits.set_visual_max_temperature(30.0f);
   traits.set_visual_temperature_step(SETPOINT_STEP);
+  if (this->room_sensor_ != nullptr)
+    traits.set_visual_current_temperature_step(0.1f);
 
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_ACTION);
