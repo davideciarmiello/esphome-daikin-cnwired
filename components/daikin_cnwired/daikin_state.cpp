@@ -19,8 +19,9 @@ void DaikinState::set_states_from_command_packet_(const uint8_t *packet) {
         this->power_ = (packet[CNW_MODE_OFFSET] & CNW_MODE_POWEROFF) == 0;
         this->powerful_ = packet[CNW_FAN_OFFSET] == CNW_FAN_POWERFUL;
         this->fan_ = decode_fan(packet);
-        this->swing_v_ = (packet[CNW_SPECIALS_OFFSET] & CNW_V_SWING) != 0;
-        this->led_ = (packet[CNW_SPECIALS_OFFSET] & CNW_LED_ON) != 0;
+        this->swing_v_ = (packet[CNW_SPECIALS_OFFSET] & CNW_SPECIALS_V_SWING) != 0;
+        this->sleep_ = (packet[CNW_SPECIALS_OFFSET] & CNW_SPECIALS_SLEEP) != 0;
+        this->led_ = (packet[CNW_SPECIALS_OFFSET] & CNW_SPECIALS_LED_ON) != 0;
         this->has_last_package_ = true;
         std::memcpy(this->last_package_, packet, CNW_PKT_LEN);
         this->has_tx_package_ = false;

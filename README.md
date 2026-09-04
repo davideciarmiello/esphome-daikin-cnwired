@@ -90,14 +90,19 @@ climate:
 
     led_switch:
       name: "Daikin LED"
-    listen_only_switch:
-      name: "Daikin Listen Only"
+    sleep_switch:
+      name: "Daikin SLEEP"
     power_switch:
       name: "Daikin Power"
+    
     ac_temperature_sensor:
       name: "Daikin Temperature"
     online_sensor:
       name: "Daikin OnLine"
+
+    # for debug, only receive commands and not send response
+    listen_only_switch:
+      name: "Daikin Listen Only"
 
 sensor:
   - platform: template
@@ -115,6 +120,30 @@ sensor:
     update_interval: 60s
     unit_of_measurement: °C
     
+
+# for debug, you can send a raw command
+text:
+  - platform: template
+    name: "Raw Command"
+    id: raw_command
+    mode: text
+    optimistic: true
+    restore_value: false
+    max_length: 23
+    disabled_by_default: true
+    entity_category: diagnostic
+
+button:
+  - platform: template
+    name: "Send Raw Command"
+    id: send_raw_command
+    icon: "mdi:send"
+    disabled_by_default: true
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(daikin).send_raw(id(raw_command).state);
+          
 
 ```
 

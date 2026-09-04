@@ -111,11 +111,14 @@ constexpr Fan from_esphome_fan(climate::ClimateFanMode fan) {
 }
 
 
-constexpr bool float_equal(float a, float b) {
+constexpr bool float_equal(float a, float b, int decimals = 1) {
   if (std::isnan(a) || std::isnan(b))
     return std::isnan(a) && std::isnan(b);
-
-  return std::fabs(a - b) < 0.01f;
+  float factor = 1.0f;
+  for (int i = 0; i < decimals; i++)
+    factor *= 10.0f;
+  return std::round(a * factor) == std::round(b * factor);
+  //return std::fabs(a - b) < 0.01f;
 }
 
 

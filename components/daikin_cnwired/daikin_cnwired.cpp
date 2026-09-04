@@ -88,12 +88,12 @@ void DaikinCNWired::loop() {
   
   bool changed = false;
   float temp = this->get_effective_current_temperature();
-  if (!float_equal(temp, this->current_temperature) && temp > 0)
+  if (!float_equal(temp, this->current_temperature, 1) && temp > 0)
   {
     this->current_temperature = temp;
     changed = true;
   }
-  if (this->room_humidity_sensor_ != nullptr && !float_equal(this->room_humidity_sensor_->state, this->current_humidity))
+  if (this->room_humidity_sensor_ != nullptr && !float_equal(this->room_humidity_sensor_->state, this->current_humidity, 0))
   {
       this->current_humidity=this->room_humidity_sensor_->state;
       changed = true;
@@ -118,12 +118,10 @@ void DaikinCNWired::user_command_changed_() {
   //almeno dopo 20ms, cosi posso inviare piu cose insieme e do il tempo di settarle tutte
   if (this->pending_user_command_ == false) {
     this->pending_user_command_ = true;
-    this->pending_mode_.reset();
-    this->pending_fan_.reset();
-    this->pending_target_temp_.reset();
-    this->pending_preset_.reset();
-    this->pending_swing_.reset();
-    this->pending_led_.reset();
+    
+    DaikinState &state = this->desired_state;
+    state.has_tx_package_ = false;
+    state.copy_from(this->current_state);
   }
   this->pending_user_command_sended_ = false;
   this->pending_user_command_sended_after_temp_report_ = false;
@@ -135,35 +133,7 @@ void DaikinCNWired::user_command_changed_() {
   this->pending_user_command_to_confirm_ = true; // per forzare il caricamento dell'interfaccia qando arriva il pacchetto
 }
 void DaikinCNWired::pending_changes_apply() {
-  DaikinState &state = this->desired_state;
-  state.has_tx_package_ = false;
-  state.copy_from(this->current_state);
-  if (this->pending_mode_.has_value())
-  {
-    auto m = *this->pending_mode_;
-    switch (m) {
-      case climate::CLIMATE_MODE_OFF:
-        state.power_ = false;
-        break;      
-      default:
-        state.power_ = true;
-        state.mode_ = from_esphome_mode(m, state.mode_);
-        break;
-    }
-  }
-  if (this->pending_target_temp_.has_value())
-    state.target_temp_ = *this->pending_target_temp_;
-  if (this->pending_fan_.has_value())
-    state.fan_ = from_esphome_fan(*this->pending_fan_);    
-  if (this->pending_swing_.has_value())
-    state.swing_v_ = *this->pending_swing_ == climate::CLIMATE_SWING_VERTICAL;
-  if (this->pending_preset_.has_value())
-  {
-    auto m = *this->pending_preset_;
-    state.powerful_ = m == climate::CLIMATE_PRESET_BOOST;
-  }
-  if (this->pending_led_.has_value())
-    state.led_ = *this->pending_led_;
+  //
 }
 
 bool DaikinCNWired::validate_packet_(const uint8_t *packet) const {
@@ -176,7 +146,7 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
 
   if (!this->validate_packet_(packet)) {
     ++this->bad_checksum_count_;
-    ESP_LOGW(TAG, "Invalid CN_WIRED checksum");
+    ESP_LOGW(TAG, "Invalid CN_WIRED checksum. Packet=%s", packet_to_string(packet).c_str());
     return;
   }
 
@@ -184,9 +154,7 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
   //if (changed){
     // Log the complete raw 8-byte frame before any decoding. This is useful
     // when comparing ESPHome behaviour with the original Faikout firmware.
-  //  ESP_LOGD(TAG, "RX CN_WIRED RAW: %02X %02X %02X %02X %02X %02X %02X %02X",
-  //          packet[0], packet[1], packet[2], packet[3],
-  //          packet[4], packet[5], packet[6], packet[7]);
+  //  ESP_LOGD(TAG, "RX CN_WIRED RAW: Packet=%s", packet_to_string(packet).c_str());
   //}
 
   //if (this->pending_user_command_ > 0)
@@ -208,17 +176,17 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
       //non invio la risposta, altrimenti non arriva mai il pacchetto del MODE_CHANGED
       if (this->pending_user_command_)
       {        
-          ESP_LOGD(TAG, "Received Current temperature signal during send user command.");
-      //  return;
+          //ESP_LOGD(TAG, "Received Current temperature signal during send user command.");
+        //  return;
         if (this->pending_user_command_ && this->pending_user_command_count_ > 0 && this->pending_user_command_sended_after_temp_report_ == false)
             this->pending_tx_ = true;
       }
-      float temp = decode_bcd(packet[CNW_TEMP_OFFSET]);      
+      float temp = decode_bcd(packet[CNW_TEMP_OFFSET]);
       if (temp != this->current_state.current_temp_)
       {
           this->current_state.current_temp_ = temp;
           this->desired_state.current_temp_ = temp;
-          ESP_LOGD(TAG, "Received Current temperature signal.");
+          ESP_LOGD(TAG, "RX Current temperature report:  %.1f °C - Packet=%s", temp, packet_to_string(packet).c_str());
           if (this->ac_temperature_sensor_ != nullptr)
               this->ac_temperature_sensor_->publish_state(temp);
       }
@@ -232,7 +200,7 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
       {
         this->last_rx_mode_time_ = millis();
         this->pending_tx_ = true;
-        bool is_remote_control = (packet[CNW_SPECIALS_OFFSET] & CNW_SPECIAL_REMOTE_CONTROL) != 0;
+        bool is_remote_control = (packet[CNW_SPECIALS_OFFSET] & CNW_SPECIALS_REMOTE_CONTROL) != 0;
         if (is_remote_control)
         {
           bool is_new = this->last_remote_control_checksum_ != packet[CNW_CRC_TYPE_OFFSET]
@@ -242,7 +210,7 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
           {
             this->last_remote_control_checksum_ = packet[CNW_CRC_TYPE_OFFSET];
             this->last_remote_control_ms_ = millis();
-            ESP_LOGD(TAG, "Detected remote control");
+            ESP_LOGD(TAG, "RX STATUS: Detected remote control. Packet=%s", packet_to_string(packet).c_str());
           } else {
             is_remote_control = false;
           }
@@ -253,7 +221,7 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
         {
           this->pending_user_command_ = false;
           this->pending_user_command_to_confirm_ = false;
-          ESP_LOGD(TAG, "Sending pending command cancelled, received a remote change command.");
+          ESP_LOGW(TAG, "RX STATUS: Sending pending command cancelled, received a remote change command. Packet=%s", packet_to_string(packet).c_str());
         }
         //se mentre invio arriva un comando, lo ignoro e forzo l'invio ancora di nuovo
         if (this->pending_user_command_ && this->pending_user_command_sended_)
@@ -263,36 +231,28 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
           if (temp_state == this->desired_state && this->pending_user_command_sended_)
           {
             this->pending_user_command_ = false;
-            ESP_LOGD(TAG, "RX CN_WIRED MODE CONFIRMED AS TX: mode=(0x%02X),  RAW: %02X %02X %02X %02X %02X %02X %02X %02X", packet[CNW_MODE_OFFSET],
-                  packet[0], packet[1], packet[2], packet[3],
-                  packet[4], packet[5], packet[6], packet[7]);
-          } else {            
-            ESP_LOGD(TAG, "RX CN_WIRED MODE WAITING FOR CONFIRMED AS TX: mode=(0x%02X),  RAW: %02X %02X %02X %02X %02X %02X %02X %02X", packet[CNW_MODE_OFFSET],
-                  packet[0], packet[1], packet[2], packet[3],
-                  packet[4], packet[5], packet[6], packet[7]);
+            ESP_LOGI(TAG, "RX STATUS: Mode confirmed as sended: Packet=%s - Sended Packet: %s", packet_to_string(packet).c_str(), packet_to_string(desired_state.tx_package_).c_str());
+          } else {
+            ESP_LOGD(TAG, "RX STATUS: Mode waiting for confirm as sended: Packet=%s - Sended Packet: %s", packet_to_string(packet).c_str(), packet_to_string(desired_state.tx_package_).c_str());
           }
         }
         if (this->pending_user_command_)
         {
           this->pending_user_command_count_ += 3;
           if (this->pending_user_command_sended_ == false)
-            ESP_LOGD(TAG, "Received MODE_CHANGED signal during send user command without pending_user_command_sended_.");
+            ESP_LOGD(TAG, "RX STATUS: Received MODE_CHANGED signal during send user command without pending_user_command_sended_.");
           break;
         }
         bool changed = this->current_state.packet_changed(packet);
         if (changed || this->pending_user_command_to_confirm_ || is_remote_control)
         {
-          ESP_LOGD(TAG, "RX CN_WIRED MODE: mode=(0x%02X),  RAW: %02X %02X %02X %02X %02X %02X %02X %02X", packet[CNW_MODE_OFFSET],
-                  packet[0], packet[1], packet[2], packet[3],
-                  packet[4], packet[5], packet[6], packet[7]);
+          ESP_LOGD(TAG, "RX STATUS: Mode changed. Packet=%s <---", packet_to_string(packet).c_str());
           this->current_state.set_states_from_command_packet_(packet);
           if (this->pending_user_command_to_confirm_){
             this->pending_user_command_to_confirm_ = false;
             if (this->current_state != this->desired_state)
             {
-              ESP_LOGE(TAG, "TX COMMAND FAILED. Received response not match. CN_WIRED MODE: mode=(0x%02X),  RAW: %02X %02X %02X %02X %02X %02X %02X %02X", packet[CNW_MODE_OFFSET],
-                      packet[0], packet[1], packet[2], packet[3],
-                      packet[4], packet[5], packet[6], packet[7]);
+              ESP_LOGE(TAG, "TX COMMAND FAILED. Received response not match. Packet=%s - Sended Packet: %s", packet_to_string(packet).c_str(), packet_to_string(desired_state.tx_package_).c_str());
             }
           }
           if (this->pending_user_command_)
@@ -302,25 +262,18 @@ void DaikinCNWired::process_packet_(const uint8_t *packet) {
             break;
           this->publish_state();
         } else {
-          ESP_LOGD(TAG, "RX CN_WIRED MODE NOT CHANGED: mode=(0x%02X),  RAW: %02X %02X %02X %02X %02X %02X %02X %02X", packet[CNW_MODE_OFFSET],
-                  packet[0], packet[1], packet[2], packet[3],
-                  packet[4], packet[5], packet[6], packet[7]);
+          ESP_LOGD(TAG, "RX STATUS: Packet=%s <--- (UNCHANGED)", packet_to_string(packet).c_str());
         }
-      } else {
-        
-        ESP_LOGD(TAG, "RX CN_WIRED RAW: %02X %02X %02X %02X %02X %02X %02X %02X",
-                packet[0], packet[1], packet[2], packet[3],
-                packet[4], packet[5], packet[6], packet[7]);
+      } else {        
+        ESP_LOGE(TAG, "RX STATUS: Mode not valid. Packet=%s", packet_to_string(packet).c_str());
       }
 
       break;
     }
 
     default:
-      ESP_LOGD(TAG, "Unknown CN_WIRED packet type: 0x%02X", type);      
-      ESP_LOGD(TAG, "RX CN_WIRED RAW: %02X %02X %02X %02X %02X %02X %02X %02X",
-              packet[0], packet[1], packet[2], packet[3],
-              packet[4], packet[5], packet[6], packet[7]);
+      ESP_LOGD(TAG, "Unknown CN_WIRED packet type: 0x%02X", type);
+      ESP_LOGD(TAG, "RX CN_WIRED RAW: Packet=%s", packet_to_string(packet).c_str());
       return;
   }
 }
@@ -345,7 +298,10 @@ void DaikinCNWired::set_climate_from_states_(DaikinState &state) {
     this->fan_mode = to_esphome_fan(state.fan_);
     if (state.powerful_ && this->turbo_as_preset_)
       this->preset = climate::CLIMATE_PRESET_BOOST;
-    else
+    else if (state.sleep_ && this->sleep_as_preset_)
+      this->preset = climate::CLIMATE_PRESET_SLEEP;
+    else if (this->preset == climate::CLIMATE_PRESET_BOOST 
+        || this->preset == climate::CLIMATE_PRESET_SLEEP)
       this->preset = climate::CLIMATE_PRESET_NONE;
     this->clear_custom_fan_mode_();
     if (state.powerful_ && this->turbo_as_preset_ == false)
@@ -361,90 +317,118 @@ void DaikinCNWired::set_climate_from_states_(DaikinState &state) {
     if (this->switch_led_ != nullptr) {
       this->switch_led_->publish_state(state.led_);
     }
+    if (this->switch_sleep_ != nullptr) {
+      this->switch_sleep_->publish_state(state.sleep_);
+    }
     if (this->switch_power_ != nullptr) {
       this->switch_power_->publish_state(state.power_);
     }
 }
 
-//void DaikinCNWired::set_power(bool power) {  
-//  this->user_command_changed_();
-//  this->pending_mode_ = to_esphome_mode(this->current_state.mode_, power);
-//  ESP_LOGD(TAG, "Nuova modalità from set_power: %s", LOG_STR_ARG(climate_mode_to_string(this->pending_mode_)));
-//}
-//
+
+void DaikinCNWired::switch_callback(DaikinSwitch *sw, bool value, DaikinSwitchType type) {
+  if (type == SWITCH_LISTEN_ONLY)
+    return;
+  this->user_command_changed_();  
+  DaikinState &state = this->desired_state;  
+  switch (type) {
+    case SWITCH_LED:
+      ESP_LOGD(TAG, "Changed LED: %s", value ? "ON" : "OFF");
+      state.led_ = value;
+      break;
+    case SWITCH_SLEEP:
+      ESP_LOGD(TAG, "Changed SLEEP: %s", value ? "ON" : "OFF");
+      state.sleep_ = value;
+      break;
+    case SWITCH_POWER:
+      ESP_LOGD(TAG, "Changed POWER: %s", value ? "ON" : "OFF");
+      state.power_ = value;
+      break;
+    case SWITCH_LISTEN_ONLY:
+      break;
+  }
+}
+
+
 void DaikinCNWired::control(const climate::ClimateCall &call) {
   //bool changed = false;
   ESP_LOGD(TAG, "=== CLIMATE CALL ===");
+  
 
-  ESP_LOGD(TAG, "mode: %d",
-          call.get_mode().has_value() ? *call.get_mode() : -1);
-
-  ESP_LOGD(TAG, "target temp: %s",
-          call.get_target_temperature().has_value() ? "YES" : "NO");
-
-  ESP_LOGD(TAG, "fan mode: %s",
-          call.get_fan_mode().has_value() ? "YES" : "NO");
-
-  ESP_LOGD(TAG, "preset: %s",
-          call.get_preset().has_value() ? "YES" : "NO");
+  DaikinState &state = this->desired_state;
 
   if (call.get_mode().has_value()) {
-    auto m = *call.get_mode();    
+    ESP_LOGD(TAG, "mode: %d", call.get_mode().has_value() ? *call.get_mode() : -1);
+    this->user_command_changed_();
+    auto m = *call.get_mode();
     if ((m == climate::CLIMATE_MODE_AUTO && !this->auto_mode_) 
       || (m == climate::CLIMATE_MODE_HEAT_COOL && this->heat_cool_as_power_on_))
-        m = to_esphome_mode(this->current_state.mode_, true);
-    if (this->mode != m || this->pending_user_command_)
     {
-      this->user_command_changed_();
-      ESP_LOGD(TAG, "Nuova modalità: %s", LOG_STR_ARG(climate_mode_to_string(m)));
-      this->pending_mode_ = m;
+      m = to_esphome_mode(state.mode_, true);
+      ESP_LOGD(TAG, "Accendo con nuova modalità: %s", LOG_STR_ARG(climate_mode_to_string(m)));
+      state.power_ = true;
+    } else if (m == climate::CLIMATE_MODE_OFF)
+    {      
+      state.power_ = false;
+    } else {
+      state.power_ = true;
+      ESP_LOGD(TAG, "Setto nuova modalità: %s", LOG_STR_ARG(climate_mode_to_string(m)));
+      state.mode_ = from_esphome_mode(m, state.mode_);
     }
-    //const bool power = this->mode != climate::CLIMATE_MODE_OFF;
-    //this->action = this->calculate_action_(power);  
-    //changed = true;
   }
 
   if (call.get_target_temperature().has_value()) {
+    ESP_LOGD(TAG, "target temp: %s", call.get_target_temperature().has_value() ? "YES" : "NO");
+    this->user_command_changed_();
     const auto m = *call.get_target_temperature();
-    if (this->target_temperature != m || this->pending_user_command_)
+    if (this->target_temperature != m || state.target_temp_ != m)
     {
-      this->user_command_changed_();
+      //this->user_command_changed_();
       //this->target_temp_ = std::round(*call.get_target_temperature());
       //this->target_temp_ = std::clamp(this->target_temp_, 16.0f, 30.0f);
       //this->target_temperature = m;
-      this->pending_target_temp_ = m;
+      state.target_temp_ = m;
     }
   }
 
   if (call.get_preset().has_value()) {
+    ESP_LOGD(TAG, "preset: %s", call.get_preset().has_value() ? "YES" : "NO");
+    this->user_command_changed_();
     const auto m = *call.get_preset();
-    if (this->preset != m || this->pending_user_command_)
-    {
-      this->user_command_changed_();
-      this->pending_preset_ = m;
+    if (this->preset != m)
+    {      
+      if (this->turbo_as_preset_)
+        state.powerful_ = m == climate::CLIMATE_PRESET_BOOST;
+      if (this->sleep_as_preset_)
+        state.sleep_ = m == climate::CLIMATE_PRESET_SLEEP;
+      this->preset = m;
     }
   }
 
   if (call.get_fan_mode().has_value()) {
+    ESP_LOGD(TAG, "fan mode: %s", call.get_fan_mode().has_value() ? "YES" : "NO");
+    this->user_command_changed_();
     const auto m = *call.get_fan_mode();
-    if (this->fan_mode != m || this->pending_user_command_)
+    if (this->fan_mode != m)
     {
-      this->user_command_changed_();
-      this->pending_fan_ = m;
-      this->pending_preset_ = climate::CLIMATE_PRESET_NONE;
+      if (this->turbo_as_preset_ == false)
+        state.powerful_ = false;
+      state.fan_ = from_esphome_fan(m);
+      this->fan_mode = m;
     }
   }
+
   if (call.has_custom_fan_mode()) {
+    this->user_command_changed_();
+    if (this->turbo_as_preset_ == false)
+      state.powerful_ = false;
     const auto mode = call.get_custom_fan_mode();
+    ESP_LOGD(TAG, "custom fan mode: %s", mode.c_str());
     if (!mode.empty())
     {
       if (this->fan_mode_turbo_ == mode.c_str())
-      {
-        this->user_command_changed_();
-        this->pending_preset_ = climate::CLIMATE_PRESET_BOOST;
-      }
+        state.powerful_ = true;
     }
-    //changed = true;
   }
 
   //if (call.has_custom_preset()) {
@@ -454,12 +438,10 @@ void DaikinCNWired::control(const climate::ClimateCall &call) {
   //}
 
   if (call.get_swing_mode().has_value()) {
+    this->user_command_changed_();
     const auto m = *call.get_swing_mode();
-    if (this->swing_mode != m || this->pending_user_command_)
-    {
-      this->user_command_changed_();
-      this->pending_swing_ = m;
-    }
+    ESP_LOGD(TAG, "swing: %s", m == climate::CLIMATE_SWING_VERTICAL ? "Vertical" : "-");
+    state.swing_v_ = m == climate::CLIMATE_SWING_VERTICAL;
   }
 
  //// Do not transmit immediately. CN_WIRED is controller-driven: commands
@@ -468,13 +450,95 @@ void DaikinCNWired::control(const climate::ClimateCall &call) {
     //this->publish_state();
 }
 
+void DaikinCNWired::send_raw(const std::string &command) {
+  std::string input = command;
+
+  // Supporta:
+  // 21 00 23 08 08 F0 11 90
+  // 21:00:23:08:08:F0:11:90
+
+  for (char &c : input) {
+    if (c == ':')
+      c = ' ';
+  }
+
+  uint8_t data[8];
+  int count = 0;
+  size_t pos = 0;
+
+  while (pos < input.length() && count < 8) {
+    while (pos < input.length() && input[pos] == ' ')
+      pos++;
+
+    if (pos >= input.length())
+      break;
+
+    size_t end = input.find(' ', pos);
+
+    if (end == std::string::npos)
+      end = input.length();
+
+    std::string token = input.substr(pos, end - pos);
+
+    if (token.empty() || token.length() > 2) {
+      ESP_LOGE(TAG, "Invalid byte: %s", token.c_str());
+      return;
+    }
+
+    char *endptr = nullptr;
+    long value = strtol(token.c_str(), &endptr, 16);
+
+    if (*endptr != '\0' || value < 0 || value > 0xFF) {
+      ESP_LOGE(TAG, "Invalid HEX byte: %s", token.c_str());
+      return;
+    }
+
+    data[count++] = static_cast<uint8_t>(value);
+    pos = end;
+  }
+
+  if (count != 8) {
+    ESP_LOGE(TAG, "Invalid raw command: expected 8 bytes, got %d", count);
+    return;
+  }
+
+  DaikinState &state = this->current_state; 
+  if (data[CNW_TEMP_OFFSET] == 0)
+    data[CNW_TEMP_OFFSET] = encode_bcd(static_cast<uint8_t>(std::lround(state.target_temp_)));
+  if (data[1] == 0)
+  {
+    data[1] = 0x04;
+    data[2] = 0x50;
+  }
+  if (data[CNW_MODE_OFFSET] == 0)
+    data[CNW_MODE_OFFSET] = encode_mode(state.mode_, state.power_);
+  if (data[CNW_FAN_OFFSET] == 0)
+    data[CNW_FAN_OFFSET] = state.powerful_ ? CNW_FAN_POWERFUL : encode_fan(state.fan_);
+
+  data[CNW_CRC_TYPE_OFFSET] = CNW_COMMAND;
+  data[CNW_CRC_TYPE_OFFSET] = cnw_checksum(data);
+
+  ESP_LOGD(TAG, "SENDING RAW TX: Packet=%s", packet_to_string(data).c_str());
+
+  if (this->switch_listen_only_ != nullptr && this->switch_listen_only_->state == false)
+    this->switch_listen_only_->publish_state(true);
+  
+  if (!this->driver_.write(data)) {
+    ESP_LOGW(TAG, "Failed to transmit CN_WIRED packet=%s", packet_to_string(data).c_str());
+    //this->has_last_tx_ = false;
+    return;
+  }
+}
+
+
 void DaikinCNWired::send_command_() {
 
   if (this->switch_listen_only_ != nullptr && this->switch_listen_only_->state == true) {
-      ESP_LOGW(TAG, "Cannot send data: listen only enabled.");
+      //ESP_LOGW(TAG, "Cannot send data: listen only enabled.");
     if (this->pending_user_command_)
     {
       this->pending_user_command_ = false;
+      ESP_LOGW(TAG, "Cannot send user command: listen only enabled.");
     }
     return;
   }
@@ -492,35 +556,42 @@ void DaikinCNWired::send_command_() {
   uint8_t *buf = state.tx_package_;
   if (state.has_tx_package_ == false)
   {
-    uint8_t specials = 0;
     const uint8_t fan = state.powerful_ ? CNW_FAN_POWERFUL : encode_fan(state.fan_);
+
+
+    uint8_t specials = 0;
     if (state.swing_v_)
-      specials |= 0x70;
+      specials |= CNW_SPECIALS_V_SWING_SEND; // il flag originale è CNW_V_SWING 0x10 ma non basta
     if (state.led_)
-      specials |= CNW_LED_ON;
-    //specials = 0xFF;
-    //specials |= 
+      specials |= CNW_SPECIALS_LED_ON; // 0x80
+    
+    uint8_t specials_send = CNW_WRITESPECIALS_BASE; //0001 0000
+    if (state.swing_v_)
+      specials_send |= CNW_WRITESPECIALS_V_SWING; //0000 0001
+    if (state.sleep_)
+      specials_send |= CNW_WRITESPECIALS_SLEEP; //0000 0010
+    if (state.led_)
+      specials_send |= CNW_WRITESPECIALS_LED_ON; //0000 1000
+
     buf[CNW_TEMP_OFFSET] = encode_bcd(static_cast<uint8_t>(std::lround(state.target_temp_)));
     buf[1] = 0x04;
     buf[2] = 0x50;
     buf[CNW_MODE_OFFSET] = encode_mode(state.mode_, state.power_);
     buf[CNW_FAN_OFFSET] = fan;
     buf[CNW_SPECIALS_OFFSET] = specials;
-    buf[6] = state.swing_v_ ? 0x11 : 0x10;
+    buf[CNW_WRITESPECIALS_OFFSET] = specials_send;
     buf[CNW_CRC_TYPE_OFFSET] = CNW_COMMAND;
     buf[CNW_CRC_TYPE_OFFSET] = cnw_checksum(buf);
     state.has_tx_package_ = true;
     if (this->pending_user_command_ == false)
-      ESP_LOGD(TAG, "TX CN_WIRED FOR CONFIRM: %02X %02X %02X %02X %02X %02X %02X %02X",
-            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+      ESP_LOGD(TAG, "TX STATUS CONFIRM: Packet=%s --->", packet_to_string(buf).c_str());
   }
 
   //if (this->frame_changed_(buf, this->last_tx_, this->has_last_tx_)) {
-   // ESP_LOGD(TAG, "TX CN_WIRED RAW: %02X %02X %02X %02X %02X %02X %02X %02X",
-   //         buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+   // ESP_LOGD(TAG, "TX CN_WIRED RAW: Packet=%s", packet_to_string(packet).c_str());
   //}
   if (!this->driver_.write(buf)) {
-    ESP_LOGW(TAG, "Failed to transmit CN_WIRED packet");
+    ESP_LOGE(TAG, "Failed to transmit CN_WIRED Packet=%s", packet_to_string(buf).c_str());
     //this->has_last_tx_ = false;
     return;
   }
@@ -540,8 +611,7 @@ void DaikinCNWired::send_command_() {
     if (this->last_rx_packet_type_ == CNW_SENSOR_REPORT)
       this->pending_user_command_sended_after_temp_report_ = true;
     
-    ESP_LOGD(TAG, "TX CN_WIRED PENDING: %02X %02X %02X %02X %02X %02X %02X %02X",
-          buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+    ESP_LOGD(TAG, "TX STATUS: Packet=%s --->", packet_to_string(buf).c_str());
 
     this->set_climate_from_states_(this->desired_state);
     this->publish_state();
@@ -551,7 +621,7 @@ void DaikinCNWired::send_command_() {
       //this->pending_tx_ms_ = std::max(this->pending_tx_ms_, millis() + 200);
       this->pending_user_command_ = false;
     }
-  } else {    
+  } else {
   }
 }
 
@@ -582,6 +652,13 @@ climate::ClimateTraits DaikinCNWired::traits() {
     traits.add_supported_preset(climate::CLIMATE_PRESET_NONE);
     traits.add_supported_preset(climate::CLIMATE_PRESET_BOOST);
   }
+  if (this->sleep_as_preset_) {
+    traits.add_supported_preset(climate::CLIMATE_PRESET_NONE);
+    traits.add_supported_preset(climate::CLIMATE_PRESET_SLEEP);
+  }
+  
+    traits.add_supported_preset(climate::CLIMATE_PRESET_NONE);
+    traits.add_supported_preset(climate::CLIMATE_PRESET_SLEEP);
 
   //traits.set_supported_presets({
   //    climate::CLIMATE_PRESET_NONE,
@@ -624,20 +701,6 @@ void DaikinCNWired::dump_config() {
                     this->room_sensor_->get_name().c_str());
       //ESP_LOGCONFIG(TAG, "  Setpoint interval: %d", this->setpoint_interval);
     }
-  }
-}
-
-void DaikinCNWired::switch_callback(DaikinSwitch *sw, bool state, DaikinSwitchType type) {
-  this->user_command_changed_();
-  switch (type) {
-    case SWITCH_LED:
-      this->pending_led_ = state;
-      break;
-    case SWITCH_POWER:
-      this->pending_mode_ = to_esphome_mode(this->current_state.mode_, state);
-      break;
-    case SWITCH_LISTEN_ONLY:
-      break;
   }
 }
 

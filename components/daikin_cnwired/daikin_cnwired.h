@@ -38,6 +38,7 @@ class DaikinCNWired : public climate::Climate, public Component {
   void set_switch_led(switch_::Switch *sw) { this->switch_led_ = sw; }
   void set_switch_listen_only(switch_::Switch *sw) { this->switch_listen_only_ = sw; }
   void set_switch_power(switch_::Switch *sw) { this->switch_power_ = sw; }
+  void set_switch_sleep(switch_::Switch *sw) { this->switch_sleep_ = sw; }
   void switch_callback(DaikinSwitch *sw, bool value, DaikinSwitchType type);
   
   void set_room_temperature_sensor(sensor::Sensor *sensor) { this->room_sensor_ = sensor; }
@@ -48,6 +49,8 @@ class DaikinCNWired : public climate::Climate, public Component {
   DaikinState current_state;
   DaikinState desired_state;
   //void user_command_changed_();
+
+  void send_raw(const std::string &command);
 
  protected:
   climate::ClimateTraits traits() override;
@@ -67,6 +70,7 @@ class DaikinCNWired : public climate::Climate, public Component {
   bool auto_mode_{false};
   bool heat_cool_as_power_on_{false};
   bool turbo_as_preset_{false};
+  bool sleep_as_preset_{true};
   CNWiredDriver driver_;
 
   std::string fan_mode_turbo_{"Turbo"};
@@ -99,17 +103,11 @@ class DaikinCNWired : public climate::Climate, public Component {
   void user_command_changed_();
   void pending_changes_apply();
 
-  std::optional<climate::ClimateMode> pending_mode_;
-  std::optional<climate::ClimateFanMode> pending_fan_;
-  std::optional<float> pending_target_temp_;
-  std::optional<climate::ClimatePreset> pending_preset_;
-  std::optional<climate::ClimateSwingMode> pending_swing_;
-  std::optional<bool> pending_led_;
-
   void set_climate_from_states_(DaikinState &state);  
   climate::ClimateAction calculate_action_(DaikinState &state) const;
 
   switch_::Switch *switch_led_{nullptr};
+  switch_::Switch *switch_sleep_{nullptr};
   switch_::Switch *switch_listen_only_{nullptr};
   switch_::Switch *switch_power_{nullptr};
   

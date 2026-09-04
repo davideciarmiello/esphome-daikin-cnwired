@@ -22,6 +22,7 @@ enum DaikinSwitchType {
   SWITCH_LED = 0,
   SWITCH_LISTEN_ONLY = 1,
   SWITCH_POWER = 2,
+  SWITCH_SLEEP = 3,
 };
 
 class DaikinCNWired;

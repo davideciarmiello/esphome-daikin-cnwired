@@ -32,6 +32,7 @@ CONF_TURBO_AS_PRESET = "turbo_as_preset"
 
 CONF_POWER = "power_switch"
 CONF_LED = "led_switch"
+CONF_SLEEP = "sleep_switch"
 CONF_LISTEN_ONLY = "listen_only_switch"
 
 CONF_ROOM_TEMPERATURE_SENSOR = "room_temperature_sensor"
@@ -63,6 +64,7 @@ CONFIG_SCHEMA = climate.climate_schema(DaikinCNWired).extend({
 
     cv.Optional(CONF_POWER,): SWITCH_SCHEMA,
     cv.Optional(CONF_LED,): SWITCH_SCHEMA,
+    cv.Optional(CONF_SLEEP,): SWITCH_SCHEMA,
     cv.Optional(CONF_LISTEN_ONLY,): SWITCH_SCHEMA_DEBUG,
     
     cv.Optional(CONF_ROOM_TEMPERATURE_SENSOR): cv.use_id(sensor.Sensor),
@@ -85,6 +87,7 @@ CONFIG_SCHEMA = climate.climate_schema(DaikinCNWired).extend({
 SWITCH_LED = 0
 SWITCH_LISTEN_ONLY = 1
 SWITCH_POWER = 2
+SWITCH_SLEEP = 3
 
 async def to_code(config):
     # RMT viene utilizzato dal driver CN_WIRED
@@ -114,6 +117,12 @@ async def to_code(config):
         sw = cg.new_Pvariable(sw_config[CONF_ID],var,SWITCH_LED)
         await switch.register_switch(sw, sw_config)
         cg.add(var.set_switch_led(sw))
+
+    if CONF_SLEEP in config:
+        sw_config = config[CONF_SLEEP]
+        sw = cg.new_Pvariable(sw_config[CONF_ID],var,SWITCH_SLEEP)
+        await switch.register_switch(sw, sw_config)
+        cg.add(var.set_switch_sleep(sw))
         
     if CONF_LISTEN_ONLY in config:
         sw_config = config[CONF_LISTEN_ONLY]

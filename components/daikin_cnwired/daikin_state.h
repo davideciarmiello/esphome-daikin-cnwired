@@ -18,12 +18,14 @@ struct DaikinState {
   
   bool powerful_{false};
   bool led_{false};
+  bool sleep_{false};
   bool swing_v_{false};
   bool power_{false};
   Mode mode_{Mode::INVALID};
   Fan fan_{Fan::INVALID};
   float target_temp_{NAN};
   float current_temp_{NAN};
+
 
   void set_states_from_command_packet_(const uint8_t *packet);
   bool packet_changed(const uint8_t *packet) const;
@@ -41,6 +43,7 @@ struct DaikinState {
                 led_ == other.led_ &&
                 swing_v_ == other.swing_v_ &&
                 power_ == other.power_ &&
+                sleep_ == other.sleep_ &&
                 mode_ == other.mode_ &&
                 fan_ == other.fan_ &&
                 float_equal(target_temp_, other.target_temp_)
@@ -64,6 +67,7 @@ struct DaikinState {
     led_ = other.led_;
     swing_v_ = other.swing_v_;
     power_ = other.power_;
+    sleep_ = other.sleep_;
     mode_ = other.mode_;
     fan_ = other.fan_;
     target_temp_ = other.target_temp_;
