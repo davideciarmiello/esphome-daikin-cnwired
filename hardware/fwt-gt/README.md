@@ -38,3 +38,28 @@ The CN-Wired connector and its position on the FWT-GT control board are shown be
 | Communication | Daikin CN-Wired bus |
 
 The ESP32 communicates directly with the CN-Wired interface, without an external level-shifting circuit.
+
+### CN_WIR Connector
+
+The Daikin `CN_WIR` connector uses a **JST PH series connector**, with a **2.0 mm pitch** and **5 pins**.
+
+For the cable side, use a:
+
+* **JST PH 2.0 mm, 5-pin female housing**
+* Housing: **JST PHR-5**
+
+The corresponding connector on the Daikin PCB is the **male JST PH header**. The official JST documentation confirms the PHR-5 housing and SPH-002T-P0.5S contact for the PH series.
+
+#### Pinout
+
+| CN_WIR Pin | Function      | Faikin Pin |
+| ---------: | ------------- | ---------: |
+|          1 | 5V reference  |          1 |
+|          2 | Data → Daikin |          3 |
+|          3 | GND           |          5 |
+|          4 | Data → Faikin |          2 |
+|          5 | ~12V power    |          4 |
+
+> **Note:** The pin numbering above refers to the `CN_WIR` connector on the Daikin indoor unit PCB. Do not assume that the pin order is the same as the Daikin S21 connector.
+
+The `CN_WIR` interface uses separate TX/RX data lines and provides both a 5V logic reference and a higher-voltage power supply.
