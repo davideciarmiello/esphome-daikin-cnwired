@@ -19,9 +19,11 @@ No level shifter is required for this setup.
 
 The following diagrams show the recommended wiring between the ESP32 D1 Mini and the Daikin CN-Wired interface.
 
-<!-- Insert wiring diagram images here -->
+![ESP32 connection](esp32-connection.jpeg)
 
-<!-- Insert wiring diagram images here -->
+The CN-Wired connector and its position on the FWT-GT control board are shown below:
+
+![FWT-GT connectors](fwt-gt-connectors.jpeg)
 
 > **Note:** The RX and TX pins are software-configurable, so different GPIOs can be used if required by your hardware setup. The examples in this project use GPIO25 and GPIO27.
 
